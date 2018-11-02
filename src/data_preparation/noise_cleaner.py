@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # coding=utf-8
 import string
-import json
 import re
 import unicodedata
 from typing import List, Sequence, Dict
+
+from src.common.utilities import read_dataset, save_dataset
 
 
 def normalize_string(string: str) -> str:
@@ -105,16 +106,6 @@ def delete_duplicates(dataset: Sequence[str]) -> Sequence[str]:
         dataset[indices[0]]
         for indices in hashdict.values()
     ]
-
-
-def read_dataset(file_path: str) -> List[str]:
-    with open(file_path, encoding='utf-8') as f:
-        return json.load(f)
-
-
-def save_dataset(file_path: str, dataset: Sequence[str]) -> None:
-    with open(file_path, 'wt') as f:
-        json.dump(dataset, f)
 
 
 if __name__ == '__main__':
