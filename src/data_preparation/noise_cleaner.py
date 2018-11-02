@@ -3,6 +3,7 @@
 import string
 import re
 import unicodedata
+import random
 from typing import List, Sequence, Dict
 
 from src.common.utilities import read_dataset, save_dataset
@@ -108,6 +109,12 @@ def delete_duplicates(dataset: Sequence[str]) -> Sequence[str]:
     ]
 
 
+def shuffle_rows(dataset: List[str]) -> List[str]:
+    random.seed(42)
+    random.shuffle(dataset)
+    return dataset
+
+
 if __name__ == '__main__':
     DATASET_PATH = '../../datasets/jokes.json'
     NEW_DATASET_PATH = '../../datasets/jokes_cleaned.json'
@@ -118,7 +125,8 @@ if __name__ == '__main__':
     urls_deleted = map(remove_urls, translit_filtered)
     punctuation_cleaned = map(punctuation_spaces, urls_deleted)
     spaces_deduplicated = map(deduplicate_spaces, punctuation_cleaned)
+    shuffled = shuffle_rows(list(spaces_deduplicated))
 
-    cleaned = delete_duplicates(tuple(spaces_deduplicated))
+    cleaned = delete_duplicates(shuffled)
 
     save_dataset(NEW_DATASET_PATH, cleaned)
