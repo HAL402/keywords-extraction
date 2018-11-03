@@ -47,9 +47,9 @@ def get_batch(dataset: List[str], start: int, end: int) -> List[str]:
 
 
 def get_annotaion(data: List[str], button_factory: Callable) -> Annotation:
-    colors = 'red', 'blue', 'green'
+    colors = 'red', 'blue', 'green', 'gray'
     buttons = [
-        button_factory(category.name.capitalize(), color=colors[i % 3], shortcut=str(i))
+        button_factory(category.name.capitalize(), color=colors[(i - 1) % 4], shortcut=str(i))
         for i, category in enumerate(Categories, start=1)
     ]
     controls = [
