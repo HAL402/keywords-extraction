@@ -2,7 +2,7 @@
 # coding=utf-8
 import pickle
 from dataclasses import dataclass
-from typing import Tuple, Callable, Set
+from typing import Tuple, Callable, Set, List
 
 
 @dataclass
@@ -27,14 +27,18 @@ class OplogEntry:
         return self.entry == other.entry
 
 
-def read_oplog(oplog_path: str) -> Set[OplogEntry]:
-    entries = set()
+def read_oplog(oplog_path: str) -> List[OplogEntry]:
+    entries = list()
 
     with open(oplog_path, 'rb') as f:
         while True:
             try:
-                entries.add(pickle.load(f))
+                entries.append(pickle.load(f))
             except EOFError:
                 break
 
     return entries
+
+
+def get_samples_set(entries: List[OplogEntry]) -> Set[OplogEntry]:
+    return set(reversed(entries))

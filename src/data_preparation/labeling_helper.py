@@ -7,11 +7,11 @@
         `from labeling_helper import setup`
         `setup('{path}/jokes_cleaned.json', START_OF_RANGE, END_OF_RANGE)`
 """
-from typing import List, Callable
+from typing import List, Callable, Set, Optional
 
 from ipyannotate import annotate
 from ipyannotate.annotation import Annotation
-from ipyannotate.tasks import Task
+from ipyannotate.tasks import Task, MultiTask
 from ipyannotate.buttons import (
     ValueButton, NextButton, BackButton
 )
@@ -21,6 +21,13 @@ from src.common.utilities import read_dataset
 from oplog import OplogEntry
 
 
+def check_category_correctness(selected_categories: Set[Categories]) -> Optional[str]:
+    if (Categories.NONSENSE.name.capitalize() in selected_categories and
+            Categories.INCONGRUITY.name.capitalize() in selected_categories):
+        return '!!! NON cannot be combined with INC-RES'
+    return None
+
+
 class SavingButton(ValueButton):
     def __init__(self, oplog_path: str, index_offset: int, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -28,9 +35,18 @@ class SavingButton(ValueButton):
         self._index_offset = index_offset
 
     def handle_click(self) -> None:
-        current_task = self.annotation.tasks.current
+        current_task: MultiTask = self.annotation.tasks.current
+        previous_value = set(current_task.value)
+
         index = self.annotation.tasks.index
         super().handle_click()
+
+        incorrectness = check_category_correctness(current_task.value)
+        if incorrectness is not None:
+            print(incorrectness)
+            current_task.value = previous_value
+            return
+
         self._write_oplog(index, current_task)
 
     def _write_oplog(self, index: int, task: Task) -> None:

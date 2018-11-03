@@ -7,4 +7,4 @@ class Categories(Enum):
     SEX = 1
     NONSENSE = 2
     INCONGRUITY = 3
-    NOT_JOKE = 0
+    UNCLEAR = 0
