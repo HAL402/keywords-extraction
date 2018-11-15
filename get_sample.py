@@ -38,10 +38,10 @@ if __name__ == "__main__":
         if len(sample) == 600:
             break
 
-        distances = [jaccard_distance(phrase, text) < 0.6 for text in sample]
+        distances = [jaccard_distance(phrase, text) < 0.4 for text in sample]
 
         if all(distances):
             sample.append(phrase)
     
     series = pd.Series(data=sample)
-    series.to_csv('./data/sample_600.csv', index=False)
+    series.to_csv('./data/sample_600_60%.csv', index=False)
