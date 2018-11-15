@@ -44,4 +44,4 @@ if __name__ == "__main__":
             sample.append(phrase)
     
     series = pd.Series(data=sample)
-    series.to_csv('./data/sample_600.csv')
+    series.to_csv('./data/sample_600.csv', index=False)
