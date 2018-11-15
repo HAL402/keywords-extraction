@@ -32,7 +32,7 @@ def gain_all_data():
 if __name__ == "__main__":
     data = gain_all_data().sample(frac=1)
 
-    sample = [data.text[0]]
+    sample = []
 
     for phrase in data.text:
         if len(sample) == 600:
@@ -42,6 +42,8 @@ if __name__ == "__main__":
 
         if all(distances):
             sample.append(phrase)
+
+            print(len(sample))
     
     series = pd.Series(data=sample)
     series.to_csv('./data/sample_600_60%.csv', index=False)
