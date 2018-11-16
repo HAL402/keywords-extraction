@@ -13,7 +13,7 @@ def phrase_to_bag_of_words(phrase, stopwords=set(stopwords.words('russian'))):
 
     return [word for word in features if not word in stopwords]
     
-def jaccard_distance(a, b):
+def jaccard_similarity(a, b):
     a_features = phrase_to_bag_of_words(a)
     b_features = phrase_to_bag_of_words(b)
 
@@ -38,7 +38,7 @@ if __name__ == "__main__":
         if len(sample) == 600:
             break
 
-        distances = [jaccard_distance(phrase, text) < 0.4 for text in sample]
+        distances = [jaccard_similarity(phrase, text) < 0.04 for text in sample]
 
         if all(distances):
             sample.append(phrase)
@@ -46,4 +46,4 @@ if __name__ == "__main__":
             print(len(sample))
     
     series = pd.Series(data=sample)
-    series.to_csv('./data/sample_600_60%.csv', index=False)
+    series.to_csv('./data/sample_600_96%.csv', index=False)
