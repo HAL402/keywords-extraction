@@ -91,19 +91,18 @@ def compose_selection(
             selected_meta.add(meta)
             yield i, sample
 
-        if i % 100 == 0:
-            print(f'Drop ratio: {i/len(selected_meta)}, seen {i}, picked {len(selected_meta)}')
+        # if i % 100 == 0:
+        #     print(f'Drop ratio: {i/len(selected_meta)}, seen {i}, picked {len(selected_meta)}')
 
     else:
         print('Exhausted')
         yield from compose_selection(
-            dataset, morphs, morph_filter, selection_size - len(selected_meta),
-            distance_threshold - 0.2, bigrams_distance_threshold - 0.1,
+            dataset, morphs, morph_filter, selection_size,
+            distance_threshold - 0.1, bigrams_distance_threshold - 0.1,
             selected_meta
         )
 
     print(f'Total processed strings: {i}')
-    return selected_meta
 
 
 def cycle(cb):
@@ -112,9 +111,9 @@ def cycle(cb):
 
 
 if __name__ == '__main__':
-    SELECTION_SIZE = 300
-    DISTANCE_THRESHOLD = 0.96
-    BIGRAMS_THRESHOLD = 0.98
+    SELECTION_SIZE = 1500
+    DISTANCE_THRESHOLD = 1
+    BIGRAMS_THRESHOLD = 1
     WORD_FREQUENCY_THRESHOLD = 3
     STOPWORDS = set(stopwords.words('russian'))
     FILTERED_POS = {
@@ -141,10 +140,10 @@ if __name__ == '__main__':
             frequencies.get(morph.lemma, 0) > WORD_FREQUENCY_THRESHOLD
         )
 
-    dataset = read_dataset('../../prepared_data/jokes_cleaned.json')
+    dataset = read_dataset('../../prepared_data/jokes_cleaned.json')[:30000]
     morphs = cycle(lambda: read_dump('../../data/lemmas_dump'))
 
-    with open('../data/samples', 'w+b') as f:
+    with open('../../data/samples', 'w+b') as f:
         for sample in compose_selection(dataset, morphs, morph_filter, SELECTION_SIZE, DISTANCE_THRESHOLD, BIGRAMS_THRESHOLD):
             print(sample)
             pickle.dump(sample, f)

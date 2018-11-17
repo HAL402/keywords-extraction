@@ -9,7 +9,7 @@ import maru
 from maru.analyzer import Analyzer
 from maru.morph import Morph
 
-DUMP_FILE = '../data/lemmas_dump'
+DUMP_FILE = '../../data/lemmas_dump'
 
 
 def read_dataset(file_path: str) -> List[str]:
