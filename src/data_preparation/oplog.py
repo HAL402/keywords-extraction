@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from typing import Tuple, Callable, Set, List, Dict
 
-from src.common.categories import Categories
+from categories import Categories
 
 
 @dataclass

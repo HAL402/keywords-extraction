@@ -6,7 +6,7 @@ import unicodedata
 import random
 from typing import List, Sequence, Dict
 
-from src.common.utilities import read_dataset, save_dataset
+from utilities import read_dataset, save_dataset
 
 
 def normalize_string(string: str) -> str:

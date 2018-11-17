@@ -16,8 +16,8 @@ from ipyannotate.buttons import (
     ValueButton, NextButton, BackButton
 )
 
-from src.common.categories import Categories
-from src.common.utilities import read_dataset
+from categories import Categories
+from utilities import read_dataset
 from oplog import OplogEntry
 
 

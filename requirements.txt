@@ -1,6 +1,4 @@
 pandas
 scikit-learn
-pymorphy2[fast]
-pymorphy2-dicts-ru
 nltk
-gensim
+maru
