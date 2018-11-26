@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # coding=utf-8
 import pickle
+import random
 from operator import attrgetter
 from pprint import pprint
 from collections import Counter
@@ -49,9 +50,12 @@ class SampleMeta:
         return self.sample == other.sample
 
 
-def min_jaccard_distance(selected: Set[SampleMeta], joke: SampleMeta, attr: Callable[[SampleMeta], bool]) -> float:
+def min_jaccard_distance(selected: Set[SampleMeta], joke: SampleMeta, attr: Callable[[SampleMeta], Set]) -> float:
     if not len(selected):
         return 1
+
+    if len(attr(joke)) < 3:
+        return 0
 
     return min(
         nltk.jaccard_distance(attr(sample), attr(joke))
@@ -91,14 +95,14 @@ def compose_selection(
             selected_meta.add(meta)
             yield i, sample
 
-        # if i % 100 == 0:
-        #     print(f'Drop ratio: {i/len(selected_meta)}, seen {i}, picked {len(selected_meta)}')
+        if i % 100 == 0:
+            print(f'Drop ratio: {i/len(selected_meta)}, seen {i}, picked {len(selected_meta)}')
 
     else:
         print('Exhausted')
         yield from compose_selection(
             dataset, morphs, morph_filter, selection_size,
-            distance_threshold - 0.1, bigrams_distance_threshold - 0.1,
+            distance_threshold - 0.01, bigrams_distance_threshold - 0.02,
             selected_meta
         )
 
@@ -114,7 +118,7 @@ if __name__ == '__main__':
     SELECTION_SIZE = 1500
     DISTANCE_THRESHOLD = 1
     BIGRAMS_THRESHOLD = 1
-    WORD_FREQUENCY_THRESHOLD = 3
+    WORD_FREQUENCY_THRESHOLD = 4
     STOPWORDS = set(stopwords.words('russian'))
     FILTERED_POS = {
         PartOfSpeech.UNKNOWN,
@@ -140,7 +144,10 @@ if __name__ == '__main__':
             frequencies.get(morph.lemma, 0) > WORD_FREQUENCY_THRESHOLD
         )
 
-    dataset = read_dataset('../../prepared_data/jokes_cleaned.json')[:30000]
+    dataset = read_dataset('../../data/jokes_cleaned.json')
+    random.seed(42)
+    random.shuffle(dataset)
+
     morphs = cycle(lambda: read_dump('../../data/lemmas_dump'))
 
     with open('../../data/samples', 'w+b') as f:
