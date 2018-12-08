@@ -33,7 +33,10 @@ FILTERED_POS = {
 
 
 MEANINGFUL_POS = {
-
+    PartOfSpeech.ADJECTIVE,
+    PartOfSpeech.VERB,
+    PartOfSpeech.ADVERB,
+    PartOfSpeech.NOUN,
 }
 
 
@@ -56,6 +59,7 @@ def select_text(x: pd.Series):
 
 def gain_train_data():
     df = pd.read_csv('../data/train.csv', delimiter=';').dropna()
+    df = df[df.category != 0]
     return train_test_split(select_text_index(df), df.category, test_size=0.3)
 
 
@@ -76,19 +80,52 @@ def get_lemmas(x: Morphs):
     ])
 
 
-def create_model(morphs: Morphs):
-    # forest = RandomForestClassifier(n_estimators=42, n_jobs=-1, random_state=17)
-    # forest_params = {
-    #     'max_depth': range(1, 10),
-    #     'max_features': range(1, 10)
-    # }
-    # grid = GridSearchCV(
-    #     forest, forest_params,
-    #     cv=3, n_jobs=-1,
-    #     verbose=True
-    # )
+def get_unique_count(x: Sequence[Morph]):
+    lemmas = [m.lemma for m in x]
+    return len(set(lemmas))/len(lemmas)
 
-    param_grid = {'C': [0.001, 0.01, 0.1, 0.2, 0.3, 0.35, 0.38, 0.39, 0.4, 0.41, 0.42, 0.25, 0.5, 0.6, 0.7, 0.8, 0.9, 1]}
+
+def unique_words(x: pd.Series):
+    return np.array([
+        get_unique_count(m) for line in x for m in line
+    ]).reshape(-1, 1)
+
+
+def pos_ratio(x: Sequence[Morph], pos: PartOfSpeech):
+    pos_filtered = list(filter(lambda m: m.tag.pos == pos, x))
+    return len(pos_filtered)/len(x)
+
+
+def get_part_of_speech_ratio(pos: PartOfSpeech, x: pd.Series):
+    return np.array([
+        pos_ratio(m, pos) for line in x for m in line
+    ]).reshape(-1, 1)
+
+
+def meaningful_pos(x: Sequence[Morph]):
+    pos_filtered = list(filter(lambda m: m.tag.pos in MEANINGFUL_POS, x))
+    return len(pos_filtered)
+
+
+def get_meaningful_pos(x: pd.Series):
+    return np.array([
+        meaningful_pos(m) for line in x for m in line
+    ]).reshape(-1, 1)
+
+
+def create_model(morphs: Morphs):
+    forest = RandomForestClassifier(n_estimators=42, n_jobs=-1, random_state=17)
+    forest_params = {
+        'max_depth': range(1, 10),
+        'max_features': range(1, 10)
+    }
+    grid = GridSearchCV(
+        forest, forest_params,
+        cv=3, n_jobs=-1,
+        verbose=True
+    )
+
+    param_grid = {'C': list(i/20 for i in range(1, 21))}
 
     svc_grid = GridSearchCV(
         LinearSVC(), param_grid,
@@ -97,14 +134,14 @@ def create_model(morphs: Morphs):
 
     tfidf_pipeline = Pipeline([
         ('column', FunctionTransformer(select_text, validate=False)),
-        ('vect', CountVectorizer(ngram_range=(1, 5))),
+        ('vect', CountVectorizer(ngram_range=(1, 2))),
         ('tfidf', TfidfTransformer())
     ])
 
     lemma_tfidf_pipeline = Pipeline([
         ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
         ('lemmas', FunctionTransformer(get_lemmas, validate=False)),
-        ('vect', CountVectorizer(ngram_range=(1, 5))),
+        ('vect', CountVectorizer(ngram_range=(1, 2))),
         ('tfidf', TfidfTransformer())
     ])
 
@@ -116,12 +153,37 @@ def create_model(morphs: Morphs):
     count_vec_lemma_pipeline = Pipeline([
         ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
         ('lemmas', FunctionTransformer(get_lemmas, validate=False)),
-        ('vectorizer', CountVectorizer(ngram_range=(1, 3)))
+        ('vectorizer', CountVectorizer(ngram_range=(1, 2)))
     ])
 
     count_vec_pipeline = Pipeline([
         ('column', FunctionTransformer(select_text, validate=False)),
-        ('vectorizer', CountVectorizer(ngram_range=(1, 3)))
+        ('vectorizer', CountVectorizer(ngram_range=(1, 2)))
+    ])
+
+    unique_words_pipeline = Pipeline([
+        ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
+        ('counts', FunctionTransformer(unique_words, validate=False))
+    ])
+
+    verb_pipeline = Pipeline([
+        ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
+        ('pos_ratio', FunctionTransformer(partial(get_part_of_speech_ratio, PartOfSpeech.VERB), validate=False))
+    ])
+
+    noun_pipeline = Pipeline([
+        ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
+        ('pos_ratio', FunctionTransformer(partial(get_part_of_speech_ratio, PartOfSpeech.NOUN), validate=False))
+    ])
+
+    adj_pipeline = Pipeline([
+        ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
+        ('pos_ratio', FunctionTransformer(partial(get_part_of_speech_ratio, PartOfSpeech.ADJECTIVE), validate=False))
+    ])
+
+    pos_pipeline = Pipeline([
+        ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
+        ('pos', FunctionTransformer(partial(get_part_of_speech_ratio, PartOfSpeech.ADJECTIVE), validate=False))
     ])
 
     return Pipeline([
@@ -130,7 +192,12 @@ def create_model(morphs: Morphs):
             ('lemma_tfidf', lemma_tfidf_pipeline),
             ('count_vec_lemma', count_vec_lemma_pipeline),
             ('count_vec', count_vec_pipeline),
-            ('length', length_pipeline)
+            ('length', length_pipeline),
+            ('unique_words', unique_words_pipeline),
+            ('adj', adj_pipeline),
+            ('noun', noun_pipeline),
+            ('verb', verb_pipeline),
+            ('meaningful_pos', pos_pipeline),
         ])),
         ('svc_grid', svc_grid)
     ]), svc_grid
@@ -141,21 +208,21 @@ def create_model(morphs: Morphs):
 def validate(model, data_test, answer_test):
     test_df = pd.concat([data_test, answer_test], axis=1)
 
-    sex_df = test_df[test_df.category == 0]
+    # sex_df = test_df[test_df.category == 0]
     non_df = test_df[test_df.category == 1]
     incres_df = test_df[test_df.category == 2]
 
-    predicted_sex = model.predict(select_text_index(sex_df))
+    # predicted_sex = model.predict(select_text_index(sex_df))
     predicted_non = model.predict(select_text_index(non_df))
     predicted_incres = model.predict(select_text_index(incres_df))
 
-    sex_accuracy = np.mean(predicted_sex == sex_df.category)
+    # sex_accuracy = np.mean(predicted_sex == sex_df.category)
     non_accuracy = np.mean(predicted_non == non_df.category)
     incres_accuracy = np.mean(predicted_incres == incres_df.category)
 
-    overall_accuracy = math.sqrt(sex_accuracy * non_accuracy * incres_accuracy)
+    overall_accuracy = math.sqrt(non_accuracy * incres_accuracy)
     print(pd.DataFrame({
-        'Sex': [sex_accuracy],
+        # 'Sex': [sex_accuracy],
         'Non': [non_accuracy],
         'Inc-Res': [incres_accuracy],
         'Overall': [overall_accuracy]
@@ -170,6 +237,6 @@ if __name__ == '__main__':
 
     model, grid = create_model(lemmas)
     model.fit(data_train, answer_train)
-    print(grid.best_params_)
+    # print(grid.best_params_)
 
     validate(model, data_test, answer_test)
