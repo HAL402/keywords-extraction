@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.feature_extraction.text import TfidfTransformer, CountVectorizer
 from sklearn.preprocessing import FunctionTransformer
-
+from sklearn.svm import LinearSVC
 
 Morphs = Sequence[Sequence[Morph]]
 
@@ -55,7 +55,7 @@ def select_text(x: pd.Series):
 
 
 def gain_train_data():
-    df = pd.read_csv('../data/samples.csv', delimiter=';').dropna()
+    df = pd.read_csv('../data/train.csv', delimiter=';').dropna()
     return train_test_split(select_text_index(df), df.category, test_size=0.3)
 
 
@@ -77,27 +77,34 @@ def get_lemmas(x: Morphs):
 
 
 def create_model(morphs: Morphs):
-    forest = RandomForestClassifier(n_estimators=42, n_jobs=-1, random_state=17)
-    forest_params = {
-        'max_depth': range(1, 10),
-        'max_features': range(2, 10)
-    }
-    grid = GridSearchCV(
-        forest, forest_params,
-        cv=7, n_jobs=-1,
-        verbose=True
+    # forest = RandomForestClassifier(n_estimators=42, n_jobs=-1, random_state=17)
+    # forest_params = {
+    #     'max_depth': range(1, 10),
+    #     'max_features': range(1, 10)
+    # }
+    # grid = GridSearchCV(
+    #     forest, forest_params,
+    #     cv=3, n_jobs=-1,
+    #     verbose=True
+    # )
+
+    param_grid = {'C': [0.001, 0.01, 0.1, 0.2, 0.3, 0.35, 0.38, 0.39, 0.4, 0.41, 0.42, 0.25, 0.5, 0.6, 0.7, 0.8, 0.9, 1]}
+
+    svc_grid = GridSearchCV(
+        LinearSVC(), param_grid,
+        cv=3, n_jobs=-1, verbose=True
     )
 
     tfidf_pipeline = Pipeline([
         ('column', FunctionTransformer(select_text, validate=False)),
-        ('vect', CountVectorizer(ngram_range=(1, 3))),
+        ('vect', CountVectorizer(ngram_range=(1, 5))),
         ('tfidf', TfidfTransformer())
     ])
 
     lemma_tfidf_pipeline = Pipeline([
         ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
         ('lemmas', FunctionTransformer(get_lemmas, validate=False)),
-        ('vect', CountVectorizer(ngram_range=(1, 3))),
+        ('vect', CountVectorizer(ngram_range=(1, 5))),
         ('tfidf', TfidfTransformer())
     ])
 
@@ -106,14 +113,27 @@ def create_model(morphs: Morphs):
         ('length', FunctionTransformer(get_text_length, validate=False))
     ])
 
+    count_vec_lemma_pipeline = Pipeline([
+        ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
+        ('lemmas', FunctionTransformer(get_lemmas, validate=False)),
+        ('vectorizer', CountVectorizer(ngram_range=(1, 3)))
+    ])
+
+    count_vec_pipeline = Pipeline([
+        ('column', FunctionTransformer(select_text, validate=False)),
+        ('vectorizer', CountVectorizer(ngram_range=(1, 3)))
+    ])
+
     return Pipeline([
         ('features', FeatureUnion([
             ('tfidf', tfidf_pipeline),
             ('lemma_tfidf', lemma_tfidf_pipeline),
+            ('count_vec_lemma', count_vec_lemma_pipeline),
+            ('count_vec', count_vec_pipeline),
             ('length', length_pipeline)
         ])),
-        ('grid', grid)
-    ])
+        ('svc_grid', svc_grid)
+    ]), svc_grid
 
 
 # region validation
@@ -148,8 +168,8 @@ if __name__ == '__main__':
     lemmas = list(read_dump('../data/lemmas_dump'))
     data_train, data_test, answer_train, answer_test = gain_train_data()
 
-    model = create_model(lemmas)
-    print(answer_train.shape)
+    model, grid = create_model(lemmas)
     model.fit(data_train, answer_train)
+    print(grid.best_params_)
 
     validate(model, data_test, answer_test)
