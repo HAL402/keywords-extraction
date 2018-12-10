@@ -7,17 +7,21 @@ from typing import Iterable, Sequence
 
 import pandas as pd
 import numpy as np
-from maru.grammeme.pos import PartOfSpeech
-from maru.morph import Morph
+import pymorphy2 as pm
+from src.maru.grammeme.pos import PartOfSpeech
+from src.maru.morph import Morph
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.feature_extraction.text import TfidfTransformer, CountVectorizer
 from sklearn.preprocessing import FunctionTransformer
 from sklearn.svm import LinearSVC
+from wiki_ru_wordnet import WikiWordnet
+from  itertools import combinations
 
 Morphs = Sequence[Sequence[Morph]]
-
+wikiwordnet = WikiWordnet()
+morph = pm.MorphAnalyzer()
 
 FILTERED_POS = {
     PartOfSpeech.UNKNOWN,
@@ -40,6 +44,45 @@ MEANINGFUL_POS = {
 }
 
 
+def get_normalized_words(text):
+    words = []
+    for word in text.split():
+        res = morph.parse(word)
+        if res[0].tag.POS in MEANINGFUL_POS:
+            words.append(res[0].normal_form)
+    return words
+
+
+def get_words_synset(word):
+    wordsSet = set()
+    wikiwordnet.get_synsets(word)
+    synsets = wikiwordnet.get_synsets(word)
+    if len(synsets) != 0:
+        for w in synsets[0].get_words():
+            wordsSet.add(w.lemma())
+        wordsSet.remove(word)
+    return wordsSet
+
+
+def get_syn_count(joke):
+    words = set(get_normalized_words(joke))
+    synsets = [(x, get_words_synset(x)) for x in words]
+    words_with_syn = [w for w in synsets if len(w[1]) > 0]
+    if len(words_with_syn) <= 1:
+        return 0
+    kek = [a for a in combinations(words_with_syn, 2) if a[0][0] != a[1][0] and len(a[0][1].intersection(a[1][1])) > 0]
+    return len(kek)
+
+
+def get_unknown_words(text):
+    words = []
+    for word in text.split():
+        res = morph.parse(morph.normal_forms(word)[0])
+        if res[0].tag.POS in MEANINGFUL_POS and len(wikiwordnet.get_synsets(morph.normal_forms(word)[0])) == 0:
+            words.append(word)
+    return len(words)
+
+
 def read_dump(file_path: str) -> Iterable[Sequence['Morph']]:
     with open(file_path, 'rb') as f:
         while True:
@@ -58,13 +101,26 @@ def select_text(x: pd.Series):
 
 
 def gain_train_data():
-    df = pd.read_csv('../data/train.csv', delimiter=';').dropna()
+    df = pd.read_csv('../data/train2.csv', delimiter=';').dropna()
     df = df[df.category != 0]
-    return train_test_split(select_text_index(df), df.category, test_size=0.3)
+    text_index = select_text_index(df)
+    return train_test_split(text_index, df.category, test_size=0.3)
 
 
 def get_text_length(x: pd.Series):
     return np.array([len(t) for t in x]).reshape(-1, 1)
+
+
+def contains_question(x: pd.Series):
+    return np.array([1 if "?" in t else 0 for t in x]).reshape(-1, 1)
+
+
+def syn_count(x: pd.Series):
+    return np.array([get_syn_count(t) for t in x]).reshape(-1, 1)
+
+
+def unknown_words_count(x: pd.Series):
+    return np.array([get_unknown_words(t) for t in x]).reshape(-1, 1)
 
 
 def get_morphs(morphs: Morphs, x: pd.Series):
@@ -116,8 +172,8 @@ def get_meaningful_pos(x: pd.Series):
 def create_model(morphs: Morphs):
     forest = RandomForestClassifier(n_estimators=42, n_jobs=-1, random_state=17)
     forest_params = {
-        'max_depth': range(1, 10),
-        'max_features': range(1, 10)
+        'max_depth': range(1, 11),
+        'max_features': range(1, 11)
     }
     grid = GridSearchCV(
         forest, forest_params,
@@ -183,7 +239,22 @@ def create_model(morphs: Morphs):
 
     pos_pipeline = Pipeline([
         ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
-        ('pos', FunctionTransformer(partial(get_part_of_speech_ratio, PartOfSpeech.ADJECTIVE), validate=False))
+        ('pos', FunctionTransformer(get_meaningful_pos, validate=False))
+    ])
+
+    quest_pipeline = Pipeline([
+        ('column', FunctionTransformer(select_text, validate=False)),
+        ('quest', FunctionTransformer(contains_question, validate=False))
+    ])
+
+    syn_pipeline = Pipeline([
+        ('column', FunctionTransformer(select_text, validate=False)),
+        ('quest', FunctionTransformer(syn_count, validate=False))
+    ])
+
+    unknow_words_pipeline = Pipeline([
+        ('column', FunctionTransformer(select_text, validate=False)),
+        ('unkn', FunctionTransformer(unknown_words_count, validate=False))
     ])
 
     return Pipeline([
@@ -198,6 +269,9 @@ def create_model(morphs: Morphs):
             ('noun', noun_pipeline),
             ('verb', verb_pipeline),
             ('meaningful_pos', pos_pipeline),
+            ('quest', quest_pipeline),
+            ('syn', syn_pipeline),
+            ('unkn', unknow_words_pipeline)
         ])),
         ('svc_grid', svc_grid)
     ]), svc_grid
@@ -232,11 +306,12 @@ def validate(model, data_test, answer_test):
 
 
 if __name__ == '__main__':
-    lemmas = list(read_dump('../data/lemmas_dump'))
-    data_train, data_test, answer_train, answer_test = gain_train_data()
+    for x in range(0, 10):
+        lemmas = list(read_dump('../data/lemmas_dump2'))
+        data_train, data_test, answer_train, answer_test = gain_train_data()
 
-    model, grid = create_model(lemmas)
-    model.fit(data_train, answer_train)
-    # print(grid.best_params_)
+        model, grid = create_model(lemmas)
+        model.fit(data_train, answer_train)
+        # print(grid.best_params_)
 
-    validate(model, data_test, answer_test)
+        validate(model, data_test, answer_test)
