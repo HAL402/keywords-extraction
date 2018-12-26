@@ -3,21 +3,22 @@
 import math
 import pickle
 from functools import partial
+from itertools import combinations
 from typing import Iterable, Sequence
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pymorphy2 as pm
-from src.maru.grammeme.pos import PartOfSpeech
-from src.maru.morph import Morph
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction.text import TfidfTransformer, CountVectorizer
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.pipeline import Pipeline, FeatureUnion
-from sklearn.feature_extraction.text import TfidfTransformer, CountVectorizer
 from sklearn.preprocessing import FunctionTransformer
-from sklearn.svm import LinearSVC
 from wiki_ru_wordnet import WikiWordnet
-from  itertools import combinations
+from sklearn.linear_model import LogisticRegression
+
+from src.maru.grammeme import Gender, Animacy
+from src.maru.grammeme.pos import PartOfSpeech
+from src.maru.morph import Morph
 
 Morphs = Sequence[Sequence[Morph]]
 wikiwordnet = WikiWordnet()
@@ -34,7 +35,6 @@ FILTERED_POS = {
     PartOfSpeech.NUMERICAL,
     PartOfSpeech.PRONOUN
 }
-
 
 MEANINGFUL_POS = {
     PartOfSpeech.ADJECTIVE,
@@ -101,8 +101,8 @@ def select_text(x: pd.Series):
 
 
 def gain_train_data():
-    df = pd.read_csv('../data/train2.csv', delimiter=';').dropna()
-    df = df[df.category != 0]
+    df = pd.read_csv('../data/train3.csv', delimiter=';').dropna()
+    # df = df[df.category != 0]
     text_index = select_text_index(df)
     return train_test_split(text_index, df.category, test_size=0.3)
 
@@ -112,11 +112,28 @@ def get_text_length(x: pd.Series):
 
 
 def contains_question(x: pd.Series):
-    return np.array([1 if "?" in t else 0 for t in x]).reshape(-1, 1)
+    return np.array([1 if t[-1] == "?" else 0 for t in x]).reshape(-1, 1)
+
+
+def contains_question1(x: pd.Series):
+    return np.array([1 if t[-1] != "?" and "?" in t else 0 for t in x]).reshape(-1, 1)
 
 
 def syn_count(x: pd.Series):
     return np.array([get_syn_count(t) for t in x]).reshape(-1, 1)
+
+
+def get_sex_keywords_count(joke):
+    words = get_normalized_words(joke)
+    sex_keywords = ["секс", "член", "трах", "жена", "муж", "парень", "любовь", "оргазм",
+                    "девушка", "трах", "постель", "измена", "женщина", "мужчина", "порно", "минет", "анал", "дроч"]
+    res = len([word for word in words if "секс" in word]) #in sex_keywords or any([sex_word in word for sex_word in sex_keywords])])
+
+    return res
+
+
+def sex_topic_words_count(x: pd.Series):
+    np.array([get_sex_keywords_count(t) for t in x]).reshape(-1, 1)
 
 
 def unknown_words_count(x: pd.Series):
@@ -125,7 +142,7 @@ def unknown_words_count(x: pd.Series):
 
 def get_morphs(morphs: Morphs, x: pd.Series):
     return np.array([
-        morphs[t] for t in x.index
+        morphs[t] for t in x["index"]
     ]).reshape(-1, 1)
 
 
@@ -138,7 +155,7 @@ def get_lemmas(x: Morphs):
 
 def get_unique_count(x: Sequence[Morph]):
     lemmas = [m.lemma for m in x]
-    return len(set(lemmas))/len(lemmas)
+    return len(set(lemmas)) / len(lemmas)
 
 
 def unique_words(x: pd.Series):
@@ -147,9 +164,19 @@ def unique_words(x: pd.Series):
     ]).reshape(-1, 1)
 
 
+def get_gender_words_count(x: Sequence[Morph]):
+    return len([m for m in x if m.tag.gender == Gender.FEMININE and m.tag.animacy == Animacy.ANIMATE])
+
+
+def gender_words_count(x: pd.Series):
+    return np.array([
+        get_gender_words_count(m) for line in x for m in line
+    ]).reshape(-1, 1)
+
+
 def pos_ratio(x: Sequence[Morph], pos: PartOfSpeech):
     pos_filtered = list(filter(lambda m: m.tag.pos == pos, x))
-    return len(pos_filtered)/len(x)
+    return len(pos_filtered) / len(x)
 
 
 def get_part_of_speech_ratio(pos: PartOfSpeech, x: pd.Series):
@@ -170,24 +197,6 @@ def get_meaningful_pos(x: pd.Series):
 
 
 def create_model(morphs: Morphs):
-    forest = RandomForestClassifier(n_estimators=42, n_jobs=-1, random_state=17)
-    forest_params = {
-        'max_depth': range(1, 11),
-        'max_features': range(1, 11)
-    }
-    grid = GridSearchCV(
-        forest, forest_params,
-        cv=3, n_jobs=-1,
-        verbose=True
-    )
-
-    param_grid = {'C': list(i/20 for i in range(1, 21))}
-
-    svc_grid = GridSearchCV(
-        LinearSVC(), param_grid,
-        cv=3, n_jobs=-1, verbose=True
-    )
-
     tfidf_pipeline = Pipeline([
         ('column', FunctionTransformer(select_text, validate=False)),
         ('vect', CountVectorizer(ngram_range=(1, 2))),
@@ -222,6 +231,11 @@ def create_model(morphs: Morphs):
         ('counts', FunctionTransformer(unique_words, validate=False))
     ])
 
+    gender_pipeline = Pipeline([
+        ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
+        ('lol_counts', FunctionTransformer(gender_words_count, validate=False))
+    ])
+
     verb_pipeline = Pipeline([
         ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
         ('pos_ratio', FunctionTransformer(partial(get_part_of_speech_ratio, PartOfSpeech.VERB), validate=False))
@@ -246,10 +260,18 @@ def create_model(morphs: Morphs):
         ('column', FunctionTransformer(select_text, validate=False)),
         ('quest', FunctionTransformer(contains_question, validate=False))
     ])
-
+    quest_pipeline1 = Pipeline([
+        ('column', FunctionTransformer(select_text, validate=False)),
+        ('quest1', FunctionTransformer(contains_question1, validate=False))
+    ])
     syn_pipeline = Pipeline([
         ('column', FunctionTransformer(select_text, validate=False)),
         ('quest', FunctionTransformer(syn_count, validate=False))
+    ])
+
+    sex_topic_words_count_pipeline = Pipeline([
+        ('column', FunctionTransformer(select_text, validate=False)),
+        ('quest', FunctionTransformer(sex_topic_words_count, validate=False))
     ])
 
     unknow_words_pipeline = Pipeline([
@@ -263,18 +285,21 @@ def create_model(morphs: Morphs):
             ('lemma_tfidf', lemma_tfidf_pipeline),
             ('count_vec_lemma', count_vec_lemma_pipeline),
             ('count_vec', count_vec_pipeline),
-            ('length', length_pipeline),
+            # ('length', length_pipeline),
             ('unique_words', unique_words_pipeline),
             ('adj', adj_pipeline),
             ('noun', noun_pipeline),
             ('verb', verb_pipeline),
             ('meaningful_pos', pos_pipeline),
             ('quest', quest_pipeline),
+            ("quest1", quest_pipeline1),
             ('syn', syn_pipeline),
-            ('unkn', unknow_words_pipeline)
+            ('unkn', unknow_words_pipeline),
+            ('gen', gender_pipeline),
+            ('sex_keywords', sex_topic_words_count_pipeline)
         ])),
-        ('svc_grid', svc_grid)
-    ]), svc_grid
+        ('lr', LogisticRegression())
+    ])
 
 
 # region validation
@@ -282,36 +307,45 @@ def create_model(morphs: Morphs):
 def validate(model, data_test, answer_test):
     test_df = pd.concat([data_test, answer_test], axis=1)
 
-    # sex_df = test_df[test_df.category == 0]
+    sex_df = test_df[test_df.category == 0]
     non_df = test_df[test_df.category == 1]
     incres_df = test_df[test_df.category == 2]
 
-    # predicted_sex = model.predict(select_text_index(sex_df))
+    predicted_sex = model.predict(select_text_index(sex_df))
     predicted_non = model.predict(select_text_index(non_df))
     predicted_incres = model.predict(select_text_index(incres_df))
 
-    # sex_accuracy = np.mean(predicted_sex == sex_df.category)
+    sex_accuracy = np.mean(predicted_sex == sex_df.category)
     non_accuracy = np.mean(predicted_non == non_df.category)
     incres_accuracy = np.mean(predicted_incres == incres_df.category)
 
     overall_accuracy = math.sqrt(non_accuracy * incres_accuracy)
-    print(pd.DataFrame({
-        # 'Sex': [sex_accuracy],
+
+    return pd.DataFrame({
+        'Sex': [sex_accuracy],
         'Non': [non_accuracy],
         'Inc-Res': [incres_accuracy],
         'Overall': [overall_accuracy]
-    }))
+    })
+
 
 # endregion
 
+def get_data_stat_by_category(df: pd.DataFrame):
+    return df.groupby(["category"]).size().reset_index(name='counts')
+
 
 if __name__ == '__main__':
-    for x in range(0, 10):
-        lemmas = list(read_dump('../data/lemmas_dump2'))
+    lemmas = list(read_dump('../data/lemmas_dump3'))
+    for i in range(0, 10):
         data_train, data_test, answer_train, answer_test = gain_train_data()
-
-        model, grid = create_model(lemmas)
+        full_table = data_train.join(pd.DataFrame(answer_train))
+        print(get_data_stat_by_category(full_table))
+        model = create_model(lemmas)
         model.fit(data_train, answer_train)
-        # print(grid.best_params_)
+        res = validate(model, data_test, answer_test)
+        print(res)
 
-        validate(model, data_test, answer_test)
+    # results.append(res)
+
+    # print(pd.concat(results))
