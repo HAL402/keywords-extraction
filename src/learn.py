@@ -9,12 +9,15 @@ from typing import Iterable, Sequence
 import numpy as np
 import pandas as pd
 import pymorphy2 as pm
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score
+
 from sklearn.feature_extraction.text import TfidfTransformer, CountVectorizer
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.preprocessing import FunctionTransformer
 from wiki_ru_wordnet import WikiWordnet
-from sklearn.linear_model import LogisticRegression
 
 from src.maru.grammeme import Gender, Animacy
 from src.maru.grammeme.pos import PartOfSpeech
@@ -100,9 +103,8 @@ def select_text(x: pd.Series):
     return x.text
 
 
-def gain_train_data():
-    df = pd.read_csv('../data/train3.csv', delimiter=';').dropna()
-    # df = df[df.category != 0]
+def gain_train_data(source_path):
+    df = pd.read_csv(source_path, delimiter=';').dropna()
     text_index = select_text_index(df)
     return train_test_split(text_index, df.category, test_size=0.3)
 
@@ -127,7 +129,7 @@ def get_sex_keywords_count(joke):
     words = get_normalized_words(joke)
     sex_keywords = ["секс", "член", "трах", "жена", "муж", "парень", "любовь", "оргазм",
                     "девушка", "трах", "постель", "измена", "женщина", "мужчина", "порно", "минет", "анал", "дроч"]
-    res = len([word for word in words if "секс" in word]) #in sex_keywords or any([sex_word in word for sex_word in sex_keywords])])
+    res = len([word for word in words if word in sex_keywords or any([sex_word in word for sex_word in sex_keywords])])
 
     return res
 
@@ -285,7 +287,7 @@ def create_model(morphs: Morphs):
             ('lemma_tfidf', lemma_tfidf_pipeline),
             ('count_vec_lemma', count_vec_lemma_pipeline),
             ('count_vec', count_vec_pipeline),
-            # ('length', length_pipeline),
+            ('length', length_pipeline),
             ('unique_words', unique_words_pipeline),
             ('adj', adj_pipeline),
             ('noun', noun_pipeline),
@@ -298,54 +300,26 @@ def create_model(morphs: Morphs):
             ('gen', gender_pipeline),
             ('sex_keywords', sex_topic_words_count_pipeline)
         ])),
-        ('lr', LogisticRegression())
+        ('lr', LogisticRegression(solver="lbfgs", multi_class="auto", max_iter=400))
     ])
 
 
-# region validation
+def print_report(prediction, answer):
+    print(classification_report(answer, prediction, target_names=["sex", "non", "inc-res"]))
 
-def validate(model, data_test, answer_test):
-    test_df = pd.concat([data_test, answer_test], axis=1)
-
-    sex_df = test_df[test_df.category == 0]
-    non_df = test_df[test_df.category == 1]
-    incres_df = test_df[test_df.category == 2]
-
-    predicted_sex = model.predict(select_text_index(sex_df))
-    predicted_non = model.predict(select_text_index(non_df))
-    predicted_incres = model.predict(select_text_index(incres_df))
-
-    sex_accuracy = np.mean(predicted_sex == sex_df.category)
-    non_accuracy = np.mean(predicted_non == non_df.category)
-    incres_accuracy = np.mean(predicted_incres == incres_df.category)
-
-    overall_accuracy = math.sqrt(non_accuracy * incres_accuracy)
-
-    return pd.DataFrame({
-        'Sex': [sex_accuracy],
-        'Non': [non_accuracy],
-        'Inc-Res': [incres_accuracy],
-        'Overall': [overall_accuracy]
-    })
-
-
-# endregion
-
-def get_data_stat_by_category(df: pd.DataFrame):
-    return df.groupby(["category"]).size().reset_index(name='counts')
+    matrix = confusion_matrix(answer, prediction)
+    total_accuracy = accuracy_score(answer, prediction)
+    accuracy_report = np.append(matrix.diagonal() / matrix.sum(axis=1), total_accuracy)
+    print(pd.DataFrame(accuracy_report, index=["sex", "non", "inc-res", "total"], columns=["Accuracy"]))
 
 
 if __name__ == '__main__':
     lemmas = list(read_dump('../data/lemmas_dump3'))
-    for i in range(0, 10):
-        data_train, data_test, answer_train, answer_test = gain_train_data()
-        full_table = data_train.join(pd.DataFrame(answer_train))
-        print(get_data_stat_by_category(full_table))
-        model = create_model(lemmas)
-        model.fit(data_train, answer_train)
-        res = validate(model, data_test, answer_test)
-        print(res)
 
-    # results.append(res)
+    data_train, data_test, answer_train, answer_test = gain_train_data('../data/train3.csv')
+    full_table = data_train.join(pd.DataFrame(answer_train))
+    model = create_model(lemmas)
+    model.fit(data_train, answer_train)
 
-    # print(pd.concat(results))
+    predicted = model.predict(data_test)
+    print_report(predicted, answer_test)
