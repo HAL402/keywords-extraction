@@ -295,7 +295,7 @@ def print_report(prediction, answer):
 
 
 if __name__ == '__main__':
-    lemmas = list(read_dump('../data/lemmas_dump3'))
+    lemmas = dict(read_dump('../data/lemmas_dump4'))
 
     data_train, data_test, answer_train, answer_test = gain_train_data('../data/train3.csv')
     full_table = data_train.join(pd.DataFrame(answer_train))
