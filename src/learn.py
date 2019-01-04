@@ -107,7 +107,7 @@ def contains_question1(x: pd.Series):
 
 def syn_count(x: pd.Series):
     return np.array([
-        get_unknown_words_count(m) for line in x for m in line
+        get_syn_count(m) for line in x for m in line
     ]).reshape(-1, 1)
 
 
