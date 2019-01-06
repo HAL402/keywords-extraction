@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # coding=utf-8
+import csv
+import json
 import pickle
+import random
 from functools import partial
 from itertools import combinations
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, List
 
 import numpy as np
 import pandas as pd
@@ -87,9 +90,12 @@ def select_text(x: pd.Series):
     return x.text
 
 
-def gain_train_data(source_path):
+def gain_train_data(source_path, no_test=False):
     df = pd.read_csv(source_path, delimiter=';').dropna()
     text_index = select_text_index(df)
+
+    if no_test:
+        return select_text_index(df), (), df.category, ()
     return train_test_split(text_index, df.category, test_size=0.3, shuffle=True, random_state=16)
 
 
@@ -294,13 +300,87 @@ def print_report(prediction, answer):
     print(pd.DataFrame(accuracy_report, index=["sex", "non", "inc-res", "total"], columns=["Accuracy"]))
 
 
-if __name__ == '__main__':
-    lemmas = dict(read_dump('../data/lemmas_dump4'))
+def read_json_dataset(file_path: str) -> List[str]:
+    with open(file_path, encoding='utf-8') as f:
+        return json.load(f)
 
-    data_train, data_test, answer_train, answer_test = gain_train_data('../data/train3.csv')
+
+def get_predict_data() -> pd.DataFrame:
+    dataset = read_json_dataset('../data/jokes_cleaned.json')
+    random.seed(42)
+    random.shuffle(dataset)
+    return pd.DataFrame(list(enumerate(dataset)), columns=['index', 'text'])
+
+
+def active_learning(model, data_train, save_path1, save_path2):
+    NUM_TOP = 150
+    NUM_BOTTOM = 50
+
+    learn_data_indices = set(data_train['index'])
+    predict_data = get_predict_data()
+
+    predicted = model.predict_proba(predict_data)
+
+    top = list(sorted(enumerate(predicted), key=lambda x: min_distance(x[1])))
+
+    np.set_printoptions(suppress=True)
+    text = predict_data['text']
+
+    with open(save_path1, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f, delimiter=';', quotechar='"', quoting=csv.QUOTE_NONNUMERIC)
+        c = 0
+        p = 0
+        while c < NUM_TOP:
+            i, score = top[p]
+            p += 1
+            if i in learn_data_indices:
+                continue
+            c += 1
+
+            writer.writerow([i, text[i], score])
+
+    with open(save_path2, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f, delimiter=';', quotechar='"', quoting=csv.QUOTE_NONNUMERIC)
+        c = 0
+        p = 1
+        while c < NUM_BOTTOM:
+            i, score = top[len(top) - p]
+            p += 1
+            if i in learn_data_indices:
+                continue
+            c += 1
+
+            writer.writerow([i, text[i], score])
+
+
+def min_distance(distances) -> float:
+    distances = list(enumerate(distances))
+    first = max(distances, key=lambda x: x[1])
+    others = [(i, d) for i, d in distances if i != first[0]]
+    return min(
+        (first[1] - others[0][1]) ** 2,
+        (first[1] - others[1][1]) ** 2
+    )
+
+
+def test(model, data_test, answer_test):
+    predicted = model.predict(data_test)
+    print_report(predicted, answer_test)
+
+
+if __name__ == '__main__':
+    ITERATION_NUM = 4
+    TEST = False
+
+    lemmas = dict(read_dump(f'../data/lemmas_dump{ITERATION_NUM}'))
+
+    data_train, data_test, answer_train, answer_test = gain_train_data(
+        f'../data/train{ITERATION_NUM}.csv', no_test=not TEST)
     full_table = data_train.join(pd.DataFrame(answer_train))
     model = create_model(lemmas)
     model.fit(data_train, answer_train)
 
-    predicted = model.predict(data_test)
-    print_report(predicted, answer_test)
+    if TEST:
+        test(model, data_test, answer_test)
+    else:
+        active_learning(model, data_train, '../data/top1.csv', '../data/bottom1.csv')
