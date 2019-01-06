@@ -327,7 +327,6 @@ def active_learning(model, data_train, save_path1, save_path2):
     text = predict_data['text']
 
     with open(save_path1, 'a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f, delimiter=';', quotechar='"', quoting=csv.QUOTE_NONNUMERIC)
         c = 0
         p = 0
         while c < NUM_TOP:
@@ -337,10 +336,9 @@ def active_learning(model, data_train, save_path1, save_path2):
                 continue
             c += 1
 
-            writer.writerow([i, text[i], score])
+            f.write(f'{i};{text[i]};{score}')
 
     with open(save_path2, 'a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f, delimiter=';', quotechar='"', quoting=csv.QUOTE_NONNUMERIC)
         c = 0
         p = 1
         while c < NUM_BOTTOM:
@@ -350,7 +348,7 @@ def active_learning(model, data_train, save_path1, save_path2):
                 continue
             c += 1
 
-            writer.writerow([i, text[i], score])
+            f.write(f'{i};{text[i]};{score}')
 
 
 def min_distance(distances) -> float:
@@ -369,13 +367,12 @@ def test(model, data_test, answer_test):
 
 
 if __name__ == '__main__':
-    ITERATION_NUM = 4
     TEST = False
 
-    lemmas = dict(read_dump(f'../data/lemmas_dump{ITERATION_NUM}'))
+    lemmas = dict(read_dump(f'../data/lemmas_dump4'))
 
     data_train, data_test, answer_train, answer_test = gain_train_data(
-        f'../data/train{ITERATION_NUM}.csv', no_test=not TEST)
+        f'../data/train5.csv', no_test=not TEST)
     full_table = data_train.join(pd.DataFrame(answer_train))
     model = create_model(lemmas)
     model.fit(data_train, answer_train)
@@ -383,4 +380,4 @@ if __name__ == '__main__':
     if TEST:
         test(model, data_test, answer_test)
     else:
-        active_learning(model, data_train, '../data/top1.csv', '../data/bottom1.csv')
+        active_learning(model, data_train, '../data/top2.csv', '../data/bottom2.csv')
