@@ -336,7 +336,7 @@ def active_learning(model, data_train, save_path1, save_path2):
                 continue
             c += 1
 
-            f.write(f'{i};{text[i]};{score}')
+            f.write(f'{i};{text[i]};{score}\n')
 
     with open(save_path2, 'a', newline='', encoding='utf-8') as f:
         c = 0
@@ -348,7 +348,7 @@ def active_learning(model, data_train, save_path1, save_path2):
                 continue
             c += 1
 
-            f.write(f'{i};{text[i]};{score}')
+            f.write(f'{i};{text[i]};{score}\n')
 
 
 def min_distance(distances) -> float:
