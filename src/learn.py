@@ -313,8 +313,8 @@ def get_predict_data() -> pd.DataFrame:
 
 
 def active_learning(model, data_train, save_path1, save_path2):
-    NUM_TOP = 150
-    NUM_BOTTOM = 50
+    NUM_TOP = 250
+    NUM_BOTTOM = 150
 
     learn_data_indices = set(data_train['index'])
     predict_data = get_predict_data()
@@ -327,6 +327,7 @@ def active_learning(model, data_train, save_path1, save_path2):
     text = predict_data['text']
 
     with open(save_path1, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f, delimiter=';', quotechar='"', quoting=csv.QUOTE_NONNUMERIC)
         c = 0
         p = 0
         while c < NUM_TOP:
@@ -336,19 +337,25 @@ def active_learning(model, data_train, save_path1, save_path2):
                 continue
             c += 1
 
-            f.write(f'{i};{text[i]};{score}\n')
+            writer.writerow([i, text[i], score])
 
+    TARGET_CLASS = 2
     with open(save_path2, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f, delimiter=';', quotechar='"', quoting=csv.QUOTE_NONNUMERIC)
         c = 0
         p = 1
         while c < NUM_BOTTOM:
             i, score = top[len(top) - p]
             p += 1
+            if max(enumerate(score), key=lambda x: x[1])[0] != TARGET_CLASS:
+                continue
+            if 'тирлиц' in text[i]:
+                continue
             if i in learn_data_indices:
                 continue
             c += 1
 
-            f.write(f'{i};{text[i]};{score}\n')
+            writer.writerow([i, text[i], TARGET_CLASS])
 
 
 def min_distance(distances) -> float:
@@ -372,7 +379,7 @@ if __name__ == '__main__':
     lemmas = dict(read_dump(f'../data/lemmas_dump4'))
 
     data_train, data_test, answer_train, answer_test = gain_train_data(
-        f'../data/train5.csv', no_test=not TEST)
+        f'../data/train6.csv', no_test=not TEST)
     full_table = data_train.join(pd.DataFrame(answer_train))
     model = create_model(lemmas)
     model.fit(data_train, answer_train)
@@ -380,4 +387,4 @@ if __name__ == '__main__':
     if TEST:
         test(model, data_test, answer_test)
     else:
-        active_learning(model, data_train, '../data/top2.csv', '../data/bottom2.csv')
+        active_learning(model, data_train, '../data/top3.csv', '../data/bottom3.csv')
