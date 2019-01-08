@@ -3,6 +3,7 @@
 import csv
 import json
 import pickle
+from collections import defaultdict
 import random
 from functools import partial
 from itertools import combinations
@@ -21,7 +22,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.preprocessing import FunctionTransformer
 from wiki_ru_wordnet import WikiWordnet
-
 from src.maru.grammeme import Gender, Animacy
 from src.maru.grammeme.pos import PartOfSpeech
 from src.maru.morph import Morph
@@ -103,11 +103,11 @@ def get_text_length(x: pd.Series):
     return np.array([len(t) for t in x]).reshape(-1, 1)
 
 
-def contains_question(x: pd.Series):
+def contains_question_in_the_end(x: pd.Series):
     return np.array([1 if t[-1] == "?" else 0 for t in x]).reshape(-1, 1)
 
 
-def contains_question1(x: pd.Series):
+def contains_question_inside(x: pd.Series):
     return np.array([1 if t[-1] != "?" and "?" in t else 0 for t in x]).reshape(-1, 1)
 
 
@@ -209,6 +209,33 @@ def get_meaningful_pos(x: pd.Series):
     ]).reshape(-1, 1)
 
 
+class TfidfEmbeddingVectorizer(object):
+    def __init__(self, russian_stopwords):
+        self.russian_stopwords = russian_stopwords
+        self.word2vec = word_vectors
+        self.word2weight = None
+        self.dim = 500
+
+    def fit(self, X, y):
+        tfidf = TfidfVectorizer(analyzer=lambda x: x, ngram_range=(1, 2), stop_words=self.russian_stopwords)
+        tfidf.fit(X)
+
+        max_idf = max(tfidf.idf_)
+        self.word2weight = defaultdict(
+            lambda: max_idf,
+            [(w, tfidf.idf_[i]) for w, i in tfidf.vocabulary_.items()])
+
+        return self
+
+    def transform(self, X):
+        return np.array([
+                np.mean([self.word2vec[w] * self.word2weight[w]
+                         for w in words if w in self.word2vec] or
+                        [np.zeros(self.dim)], axis=0)
+                for words in X
+            ])
+
+
 def create_model(morphs: Morphs):
     russian_stopwords = stopwords.words("russian")
     lemma_tfidf_pipeline = Pipeline([
@@ -251,12 +278,14 @@ def create_model(morphs: Morphs):
 
     quest_pipeline = Pipeline([
         ('column', FunctionTransformer(select_text, validate=False)),
-        ('quest', FunctionTransformer(contains_question, validate=False))
+        ('quest', FunctionTransformer(contains_question_in_the_end, validate=False))
     ])
+
     quest_pipeline1 = Pipeline([
         ('column', FunctionTransformer(select_text, validate=False)),
-        ('quest1', FunctionTransformer(contains_question1, validate=False))
+        ('quest1', FunctionTransformer(contains_question_inside, validate=False))
     ])
+
     syn_pipeline = Pipeline([
         ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
         ('syn', FunctionTransformer(syn_count, validate=False))
@@ -269,10 +298,11 @@ def create_model(morphs: Morphs):
 
     mean_w2v_pipeline = Pipeline([
         ('morphs', FunctionTransformer(partial(get_morphs, morphs), validate=False)),
-        ('counts', FunctionTransformer(mean_w2v, validate=False))
+        ('lemmas', FunctionTransformer(get_lemmas, validate=False)),
+        ('counts', TfidfEmbeddingVectorizer(russian_stopwords))
     ])
 
-    return Pipeline([
+    return  Pipeline([
         ('features', FeatureUnion([
             ('lemma_tfidf', lemma_tfidf_pipeline),
             ('count_vec_lemma', count_vec_lemma_pipeline),
@@ -287,7 +317,7 @@ def create_model(morphs: Morphs):
             ('sex_keywords', sex_topic_words_count_pipeline),
             #('mean_w2v', mean_w2v_pipeline),
         ])),
-        ('lr', LogisticRegression(solver="lbfgs", multi_class="auto", max_iter=400))
+        ('lr', LogisticRegression(solver="lbfgs", multi_class="ovr", max_iter=1000))
     ])
 
 
